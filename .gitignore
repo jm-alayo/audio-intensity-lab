@@ -1,0 +1,33 @@
+*.mp3
+*.wav
+*.flac
+*.m4a
+
+# Carátulas embebidas por spotdl/yt-dlp
+*.jpg
+*.jpeg
+*.png
+
+# Se regeneran corriendo los scripts; no hace falta versionarlos.
+*.csv
+
+# Excepción: datasets curados a mano, no se regeneran automáticamente.
+!dsp/files/*.csv
+
+dsp/out
+dsp/models-tree
+
+# ── Python 
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+env/
+.env
+
+# ── Sistema operativo / editor
+.DS_Store
+Thumbs.db
+*.log
