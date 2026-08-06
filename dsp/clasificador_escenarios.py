@@ -11,11 +11,12 @@ import sys
 import importlib.util
 from pathlib import Path
 
-import joblib
 import pandas as pd
 
-from classify import OUT_DIR, MP3_CATEGORICOS_REVISADOS, load_categoricos, find_latest_summary
+from classify import OUT_DIR, load_categoricos
 from extract_features import PLAYLIST_BASE
+from shared.utils import find_latest_summary, filename_key
+from shared.ml_func import MLFunc
 
 SCRIPT_DIR = Path(__file__).parent
 MODELS_DIR = SCRIPT_DIR / "models-tree"   # train_tree.py guarda los .pkl aca, no en OUT_DIR
@@ -113,8 +114,7 @@ def clasificar_escenario(proba_ordenada: list[tuple[str, float]]) -> dict:
 
 
 def procesar(modelo_pkl: Path, df: pd.DataFrame, categoricos: dict) -> pd.DataFrame:
-    paquete = joblib.load(modelo_pkl)
-    modelo, features_cols = paquete["modelo"], paquete["features"]
+    modelo, features_cols = MLFunc.load_model(modelo_pkl)
 
     filas = []
     for _, row in df.iterrows():
@@ -123,11 +123,10 @@ def procesar(modelo_pkl: Path, df: pd.DataFrame, categoricos: dict) -> pd.DataFr
         except (KeyError, ValueError):
             continue
 
-        proba = modelo.predict_proba([x])[0]
-        orden = sorted(zip(modelo.classes_, proba), key=lambda t: -t[1])
+        orden = MLFunc.rank_probabilities(modelo, x)["orden"]
 
         esc = clasificar_escenario(orden)
-        nombre = row["filename"].removesuffix(".mp3").lower()
+        nombre = filename_key(row["filename"])
         humano = categoricos.get(nombre, {}).get("categoria", "")
 
         filas.append({
@@ -155,7 +154,7 @@ def main():
     in_csv = find_latest_summary(OUT_DIR, playlist)
     df = pd.read_csv(in_csv, sep=";", encoding="utf-8", dtype=str).fillna("")
     df = df[df["error"].str.strip() == ""]
-    categoricos = load_categoricos(MP3_CATEGORICOS_REVISADOS)
+    categoricos = load_categoricos()
 
     resultado = procesar(modelo_pkl, df, categoricos)
     resultado = resolver_ambiguas_con_clap(resultado, playlist)

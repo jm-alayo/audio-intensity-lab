@@ -1,8 +1,17 @@
+import sys
 import numpy as np
 from pathlib import Path
 import pandas as pd
 from scipy.optimize import differential_evolution
-from classify import classify_2d, find_latest_summary, THR_E, THR_R, THR_NOISE, THR_CAMBIO, THR_DELTA
+
+DSP_DIR = Path(__file__).parent.parent
+sys.path.insert(0, str(DSP_DIR))            # dsp/ -- para poder importar classify
+sys.path.insert(0, str(DSP_DIR.parent))     # music-tagger-benchmark/ -- para poder importar shared/
+
+from classify import classify_2d
+from shared.settings import OUT_FILES_DIR, CANCIONES_XLSX
+from shared.utils import find_latest_summary
+from extract_features import load_categorized
 
 # Grados de libertad reducidos: 12 parámetros sobre 119 canciones (con clases
 # desbalanceadas, una con solo 10 ejemplos) es ambicioso — riesgo de memorizar
@@ -15,14 +24,16 @@ W_E_CENTROIDE_FIJO = 0.05   # bajo pero no-cero — el optimizador lo llevaba a 
 W_E_DYN_FIJO       = 0.10   # peso original v3
 W_R_TEMPO_FIJO     = 0.20   # peso original v3
 
-def cargar(summary_csv, categoricos_csv, agg="mediana"):
-    df = pd.read_csv(summary_csv, sep=";")
-    lab = pd.read_csv(categoricos_csv, sep=";", dtype=str)
-    lab["categoria"] = lab["categoria"].replace(
+def prepare_summary(summary_file: Path, agg: str = "mediana") -> pd.DataFrame:
+
+    df = pd.read_csv(summary_file, sep=";")
+    lab = load_categorized(CANCIONES_XLSX)
+
+    lab["categorico"] = lab["categorico"].replace(
         {"incrementable": "incrementable-decreciente", "decreciente": "incrementable-decreciente"})
-    df["filename_key"] = df["filename"].str.removesuffix(".mp3").str.lower()
-    lab["filename_key"] = lab["filename"].str.removesuffix(".mp3").str.lower()
-    df = df.merge(lab[["filename_key","categoria"]], on="filename_key")
+
+    df = df.merge(lab[["music_name","categorico"]], on="music_name")
+
     return df
 
 def predecir(df, w_e, w_r, thr_e, thr_r, thr_noise, thr_cambio, thr_delta, agg="mediana"):
@@ -93,12 +104,11 @@ def calibrar(df):
 
 if __name__ == "__main__":
 
-    SCRIPT_DIR   = Path(__file__).parent
-    MP3_CATEGORICOS_REVISADOS = SCRIPT_DIR / "files" / "mp3-categoricos-revisados.csv"
-
-    summary_csv = find_latest_summary(SCRIPT_DIR / "out", "rock_english")
+    summary_csv = find_latest_summary(OUT_FILES_DIR, "rock_english")
+    
     if summary_csv is None:
-        raise SystemExit(f"[ERROR] No se encontró ningún _summary_*_rock_english_segmin*.csv en {SCRIPT_DIR / 'out'}")
+        raise SystemExit(f"[ERROR] No se encontró ningún _summary_*_rock_english_segmin*.csv en {OUT_FILES_DIR}")
 
-    df = cargar(summary_csv, MP3_CATEGORICOS_REVISADOS)
+    df = prepare_summary(summary_csv)
+
     print(calibrar(df))

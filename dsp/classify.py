@@ -12,9 +12,14 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 
 PROJECT_ROOT = Path(__file__).parent.parent
 SCRIPT_DIR   = Path(__file__).parent
+sys.path.insert(0, str(PROJECT_ROOT))   # music-tagger-benchmark/ -- para poder importar shared/
+
+from shared.settings import CANCIONES_XLSX
+from shared.utils import find_latest_summary, filename_key
+from shared.ml_func import MLFunc
+from extract_features import load_music
 
 OUT_DIR = SCRIPT_DIR / "out"
-MP3_CATEGORICOS_REVISADOS = SCRIPT_DIR / "files" / "mp3-categoricos-revisados.csv"
 
 # Umbrales calibrados sobre los HUECOS de la distribución del run rock_english
 # (v2, 10 canciones), no sobre la mediana (que fuerza un split 50/50 arbitrario
@@ -99,30 +104,14 @@ def classify_2d(
     }
 
 
-def load_categoricos(csv_path: Path) -> dict[str, dict]:
+def load_categoricos(xlsx_path: Path = CANCIONES_XLSX) -> dict[str, dict]:
 
-    if not csv_path.exists():
-        return {}
-
-    df = pd.read_csv(csv_path, sep=";", dtype=str, keep_default_na=False)
+    df = load_music(xlsx_path)
 
     return {
-        row["filename"].lower(): {"categoria": row["categoria"], "spotify_url": row["spotify_url"]}
+        filename_key(row["music_name"].strip()): {"categoria": row["categorico"], "spotify_url": ""}
         for _, row in df.iterrows()
     }
-
-# extract_features.py genera _summary_{id}_{playlist}_segmin{N}.csv (sin
-# timestamp); siempre se trabaja con el ID más alto disponible.
-def find_latest_summary(out_dir: Path, playlist: str, id: int = None) -> Path | None:
-
-    if id is not None:
-        candidatos = sorted(out_dir.glob(f"_summary_{id}_{playlist}_segmin*.csv"))
-        return candidatos[0] if candidatos else None
-
-    pattern = re.compile(rf"^_summary_(\d+)_{re.escape(playlist)}_segmin\d+\.csv$")
-    candidatos = [(int(m.group(1)), f) for f in out_dir.glob(f"_summary_*_{playlist}_segmin*.csv") if (m := pattern.match(f.name))]
-
-    return max(candidatos, key=lambda t: t[0])[1] if candidatos else None
 
 # Cada escenario evalúa la misma clasificación con distintas columnas de
 # entrada: (col_energia, col_ritmo, col_pendiente_energia, col_delta_energia)
@@ -156,7 +145,7 @@ def _classify_row_scenario(
 
     res = classify_2d(energia, noise, ritmo, slope_e, slope_r, delta_r, delta_e, n_segments)
 
-    nombre     = row["filename"].removesuffix(".mp3").lower()
+    nombre     = filename_key(row["filename"])
     categorico = categoricos.get(nombre, {})
 
     return {
@@ -169,41 +158,6 @@ def _classify_row_scenario(
         "categoria_humano":   categorico.get("categoria", ""),
         "revisar":            res["revisar"],
     }
-
-def validate(classified_csv: Path) -> float | None:
-
-    df = pd.read_csv(classified_csv, sep=";", encoding="utf-8", dtype=str).fillna("")
-
-    df["categoria_humano"]   = df["categoria_humano"].str.strip()
-    df["categoria_sugerida"] = df["categoria_sugerida"].str.strip()
-
-    df = df[(df["categoria_humano"] != "") & (df["categoria_sugerida"] != "")]
-
-    total = len(df)
-    if total == 0:
-        print("[AVISO] No hay filas con categoria_humano rellena.")
-
-        return None
-
-    acuerdos  = int((df["categoria_humano"] == df["categoria_sugerida"]).sum())
-    confusion = Counter(zip(df["categoria_sugerida"], df["categoria_humano"]))
-
-    pct = 100 * acuerdos / total
-
-    df["validez"] = df["categoria_humano"] == df["categoria_sugerida"]
-
-    matriz = pd.DataFrame(
-        [[confusion.get((s_cat, h_cat), 0) for h_cat in CATEGORIAS] for s_cat in CATEGORIAS],
-        index=CATEGORIAS, columns=CATEGORIAS
-    )
-    matriz.index.name   = "sugerida \\ humano"
-
-    print(f"\nValidación sobre {total} canciones etiquetadas manualmente:")
-    print(f"  Acuerdo sistema vs humano: {acuerdos}/{total} = {pct:.1f}%")
-    print("\n  Matriz de confusión (sistema → humano):")
-    print(matriz.to_string())
-
-    return pct
 
 def main():
 
@@ -228,7 +182,7 @@ def main():
     if df.empty:
         sys.exit("[ERROR] No hay filas válidas en el CSV de entrada.")
 
-    categoricos = load_categoricos(MP3_CATEGORICOS_REVISADOS)
+    categoricos = load_categoricos()
 
     print("=" * 60)
     print(f"  Playlist      : {arg_playlist}")
@@ -277,7 +231,7 @@ def main():
 
         print(f"  CSV: {out_csv}")
 
-        resumen_pct[nombre_escenario] = validate(out_csv)
+        resumen_pct[nombre_escenario] = MLFunc.validate_predictions(out_csv, CATEGORIAS)
         resumen_rev[nombre_escenario] = n_rev
 
     resumen = pd.DataFrame({

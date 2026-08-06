@@ -17,20 +17,15 @@ N_WORKERS = 3
 N_WORKERS = os.cpu_count() if N_WORKERS == -1 else N_WORKERS
 
 from extract_features import (
-    process_file, 
-    load_done, 
-    find_current_id, 
-    dump_config, 
+    process_file,
+    load_done,
+    find_current_id,
+    dump_config,
     SUMMARY_COLS, PLAYLIST_BASE, FEATURES_DIR, SEGMENT_MIN_DURATION, CANCIONES_XLSX,
-    load_canciones, 
+    load_canciones,
     load_albums
 )
-
-def _next_free_id(out_dir: Path, playlist: str, segmin: int) -> int:
-    pattern = re.compile(rf"^_(?:summary|features)_(\d+)_{re.escape(playlist)}_segmin{segmin}\.csv$")
-    ids = [int(m.group(1)) for f in out_dir.glob(f"_*_{playlist}_segmin{segmin}.csv") if (m := pattern.match(f.name))]
-
-    return max(ids, default=0) + 1
+from shared.utils import next_free_id
 
 def _init_worker():
 
@@ -153,7 +148,7 @@ def main():
     if resume:
         id = find_current_id(FEATURES_DIR, playlist, SEGMENT_MIN_DURATION)
     else:
-        id = _next_free_id(FEATURES_DIR, playlist, SEGMENT_MIN_DURATION)
+        id = next_free_id(FEATURES_DIR, playlist, SEGMENT_MIN_DURATION)
 
     out_csv          = FEATURES_DIR / f"_summary_{id}_{playlist}_segmin{SEGMENT_MIN_DURATION}.csv"
     out_features_csv = FEATURES_DIR / f"_features_{id}_{playlist}_segmin{SEGMENT_MIN_DURATION}.csv"

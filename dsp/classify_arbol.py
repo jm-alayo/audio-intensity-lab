@@ -1,20 +1,11 @@
-# classify_arbol.py — el equivalente a classify.py, pero para los modelos de
-# arbol/Random Forest entrenados en train_tree.py. NO modifica classify.py:
-# solo IMPORTA su funcion validate() (y algunas utilidades) para que la
-# comparacion lineal-vs-arbol use exactamente la misma metrica y el mismo
-# calculo de matriz de confusion que ya usaste para comparar rms vs lra.
-
 import sys
 from pathlib import Path
 
-import joblib
 import pandas as pd
 
-from classify import (
-    OUT_DIR, MP3_CATEGORICOS_REVISADOS,
-    load_categoricos, find_latest_summary, validate,
-)
-
+from classify import OUT_DIR, CATEGORIAS, load_categoricos
+from shared.utils import find_latest_summary, filename_key
+from shared.ml_func import MLFunc
 
 SCRIPT_DIR = Path(__file__).parent
 OUT_MODELS_DIR = SCRIPT_DIR / "models-tree"
@@ -40,15 +31,9 @@ def classify_tree_row(row: pd.Series, modelo, features_cols: list[str], categori
     except (KeyError, ValueError):
         return None   # fila con columnas faltantes o no numericas -- se omite, igual que en classify.py
 
-    pred  = modelo.predict([x])[0]
-    proba = modelo.predict_proba([x])[0]
+    rank = MLFunc.rank_probabilities(modelo, x)   # predict_proba + top1/top2/margen
 
-    orden = sorted(zip(modelo.classes_, proba), key=lambda t: -t[1])
-    top1_p = orden[0][1]
-    top2_p = orden[1][1] if len(orden) > 1 else 0.0
-    margen = top1_p - top2_p   # que tan clara fue la decision del arbol -- analogo al "margen" lineal
-
-    nombre     = row["filename"].removesuffix(".mp3").lower()
+    nombre     = filename_key(row["filename"])
     categorico = categoricos.get(nombre, {})
 
     return {
@@ -56,10 +41,10 @@ def classify_tree_row(row: pd.Series, modelo, features_cols: list[str], categori
         "spotify_url":        categorico.get("spotify_url", ""),
         "duration_s":         row.get("duration_s", ""),
         "cambio_energia":     "",   # no aplica al arbol -- se deja vacio por compatibilidad de columnas
-        "margen":             round(margen, 3),
-        "categoria_sugerida": pred,
+        "margen":             rank["margen"],
+        "categoria_sugerida": rank["top1_categoria"],
         "categoria_humano":   categorico.get("categoria", ""),
-        "revisar":            bool(margen < THR_MARGEN_ARBOL),
+        "revisar":            bool(rank["margen"] < THR_MARGEN_ARBOL),
     }
 
 
@@ -72,7 +57,7 @@ def main():
 
     df = pd.read_csv(in_csv, sep=";", encoding="utf-8", dtype=str).fillna("")
     df = df[df["error"].str.strip() == ""]
-    categoricos = load_categoricos(MP3_CATEGORICOS_REVISADOS)
+    categoricos = load_categoricos()
 
     resumen_pct = {}
     for nombre_modelo, path_pkl in MODELOS.items():
@@ -80,8 +65,7 @@ def main():
             print(f"[AVISO] No existe {path_pkl} -- corre train_tree.py primero.")
             continue
 
-        paquete = joblib.load(path_pkl)
-        modelo, features_cols = paquete["modelo"], paquete["features"]
+        modelo, features_cols = MLFunc.load_model(path_pkl)
 
         records = [
             rec for _, row in df.iterrows()
@@ -96,7 +80,7 @@ def main():
         pd.DataFrame(records, columns=OUT_HEADERS).to_csv(out_csv, sep=";", index=False, encoding="utf-8")
 
         print(f"\n{'=' * 60}\n  Modelo: {nombre_modelo}\n{'=' * 60}")
-        pct = validate(out_csv)   # MISMA funcion que compara rms/lra -- comparacion justa, sin duplicar logica
+        pct = MLFunc.validate_predictions(out_csv, CATEGORIAS)   # MISMA funcion que compara rms/lra -- comparacion justa, sin duplicar logica
         resumen_pct[nombre_modelo] = pct
 
     print("\n" + "=" * 60)

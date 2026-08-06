@@ -14,23 +14,15 @@ import pyloudnorm as pyln
 import logging
 from tqdm import tqdm
 
+sys.path.insert(0, str(Path(__file__).parent.parent))   # music-tagger-benchmark/ -- para poder importar shared/
+from shared.settings import PLAYLIST_BASE, CANCIONES_XLSX, FEATURES_DIR, TIME_LOG_CSV
+from shared.utils import find_current_id, slope, delta_extremos, agg_media, agg_mediana, normalize
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-SCRIPT_DIR    = Path(__file__).parent
-# dsp/ -> music-tagger-benchmark/ -> datalab-music-mood/ (padre de los dos repos
-# hermanos). Con un .parent de mas quedaba en "Projects/", rompiendo las 3
-# rutas de abajo (ninguna existe ahi).
-PROJECT_ROOT  = SCRIPT_DIR.parent.parent
-
-PLAYLIST_BASE = PROJECT_ROOT / "async-music-fetch-engine" / "music-extract" / "data" / "music-downloaded"
-FEATURES_DIR = PROJECT_ROOT / "music-tagger-benchmark" / "data" / "features"
-
-CANCIONES_XLSX  = PROJECT_ROOT / "music-tagger-benchmark" / "data" / "audio" / "_canciones_rock_english.xlsx"
 CANCIONES_SHEET = "data"
 SIN_CATEGORIA   = "sin_categoria"
-
-TIME_LOG_CSV = FEATURES_DIR / "time" / "registro_tiempo.csv"
 
 def log_tiempo(music_name: str, start_time: float, end_time: float, hpss_duration: float) -> None:
 
@@ -93,11 +85,7 @@ SUMMARY_COLS = BASE_COLS + [
     "error"
 ]
 
-def find_current_id(out_dir: Path, playlist: str, segmin: int) -> int:
-    pattern = re.compile(rf"^_(?:summary|features)_(\d+)_{re.escape(playlist)}_segmin{segmin}\.csv$")
-    ids = [int(m.group(1)) for f in out_dir.glob(f"_*_{playlist}_segmin{segmin}.csv") if (m := pattern.match(f.name))]
-
-    return max(ids, default=1)
+FEATURES = ["onset_n_mediana", "tempo_n_mediana", "cent_n_mediana", "ostr_n_mediana", "flat_n_mediana", "zcr_n_mediana", "dyn_n_mediana", "pendiente_energia", "delta_energia", "pendiente_ritmo", "delta_ritmo","n_segments"]
 
 # Snapshot de las variables con las que se generó un _summary_{id}/_features_{id}
 # — quedan calibrándose seguido, así que sin esto un CSV viejo no es
@@ -135,19 +123,16 @@ def dump_config(out_dir: Path, playlist: str, segmin: int, id: int) -> Path:
     )
     return out_csv
 
-def load_canciones(xlsx_path: Path, sheet: str = CANCIONES_SHEET) -> list[str]:
+def load_music(xlsx_path: Path, sheet: str = CANCIONES_SHEET) -> list[str]:
 
     df = pd.read_excel(xlsx_path, sheet_name=sheet, dtype=str)
 
-    # df = df[
-    #     (df["categorico"].str.strip() != SIN_CATEGORIA) &
-    #     (df["album"].str.strip() != "sin_categoria") &
-    #     (df["procesar"] == "TRUE")
-    # ]
+    df = df[
+        (df["categorico"].str.strip() != SIN_CATEGORIA) &
+        (df["album"].str.strip() != "sin_categoria")
+    ]
 
-    musicas = df.loc[df["procesar"].str.upper() == "TRUE", "music_name"].tolist()
-
-    return musicas
+    return df
 
 def load_albums(xlsx_path: Path, sheet: str = CANCIONES_SHEET) -> dict[str, str]:
 
@@ -155,6 +140,12 @@ def load_albums(xlsx_path: Path, sheet: str = CANCIONES_SHEET) -> dict[str, str]
     df = df[df["categorico"].str.strip() != SIN_CATEGORIA]
 
     return {f"{n}.mp3": (a or "") for n, a in zip(df["music_name"], df["album"])}
+
+def load_categorized(xlsx_path: Path, sheet: str = CANCIONES_SHEET) -> pd.DataFrame:
+
+    df = pd.read_excel(xlsx_path, sheet_name=sheet, dtype=str)
+
+    return df[df["categorico"].str.strip() != SIN_CATEGORIA]
 
 def load_done(csv_path: Path) -> set[str]:
 
@@ -167,14 +158,6 @@ def load_done(csv_path: Path) -> set[str]:
 
     return set(df.loc[mask, "filename"])
 
-def _norm(v: float, lo: float, hi: float, type="linear") -> float:
-
-    if type == "linear":
-        return float(np.clip((v - lo) / (hi - lo), 0.0, 1.0))
-
-    elif type == "sqrt":
-        return float(np.clip((np.sqrt(v) - np.sqrt(lo)) / (np.sqrt(hi) - np.sqrt(lo)), 0.0, 1.0))
-        
 def fold_tempo(bpm: float, lo: float = TEMPO_LO, hi: float = TEMPO_HI) -> float:
 
     if bpm <= 0:
@@ -187,29 +170,6 @@ def fold_tempo(bpm: float, lo: float = TEMPO_LO, hi: float = TEMPO_HI) -> float:
         bpm *= 2.0
 
     return bpm
-
-def _slope(values: list[float]) -> float:
-
-    if len(values) <= 1:
-        return 0.0
-
-    x = np.arange(len(values))
-    m, _ = np.polyfit(x, values, 1)
-
-    return float(m)
-
-def delta_extremos(values: list[float], frac: float = 0.25) -> float:
-
-    n = len(values)
-    k = max(1, int(round(n * frac)))
-
-    return float(np.mean(values[-k:]) - np.mean(values[:k]))
-
-def agg_media(values: list[float]) -> float:
-    return round(float(np.mean(values)), 4)
-
-def agg_mediana(values: list[float]) -> float:
-    return round(float(np.median(values)), 4)
 
 LRA_LO, LRA_HI = 0.9372, 13.0     # en LU (unidades de loudness), no en amplitud — p5/p95 real, n=1015
 
@@ -304,34 +264,6 @@ def extract_segment(seg: np.ndarray, sr: int, b_idx: int, meter: "pyln.Meter") -
 
     logger.info(f" ## SEGMENTO {b_idx + 1} TIMBRE: centroid: {round(centroid, 2)} Hz, flatness: {round(flatness*100, 2)}%, zcr: {round(zcr*100, 2)}%")
 
-    ## SUBFASE 4: RATIO PERCUSIVO (HPSS) — fracción de energía que es percusión
-
-    time_start_hpss = time.time()
-
-    # _, y_perc  = librosa.effects.hpss(seg) # separa la señal en percusiva y armónica
-
-    S = np.abs(librosa.stft(seg, n_fft=2048))
-    H, P = librosa.decompose.hpss(S, kernel_size=9)
-    e_perc = float(np.sum(P**2))
-    e_harm = float(np.sum(H**2))
-
-    perc_ratio = e_perc / (e_harm + e_perc + 1e-9)
-
-    time_end_hpss = time.time()
-
-    logger.info(f" ## TIEMPO DE EJECUCIÓN DE HPSS: {time_end_hpss - time_start_hpss} segundos")
-
-    logger.info(f" ## SEGMENTO {b_idx + 1} RATIO PERCUSIVO: perc_ratio: {round(perc_ratio*100, 2)}%")
-
-    # e_total    = float(np.sum(seg ** 2)) + 1e-9 # energia total del segmento (se eleva al cuadrado para priorizar los valores mas altos y penalizar los mas bajos)
-
-    # retorna un valor entre 0.0 y 1.0 (x < 0.10 = sección melódica y acusticas lentas, x > 0.10 && x < 0.25 = seccion con estructura equilibrada, x > 0.25 = musica con mucho movimiento)
-    # mide fuerza (TEMPO mide velocidad)
-    # perc_ratio = float(np.sum(y_perc ** 2)) / e_total # energia percusiva / energia total
-
-    # respetar 2 decimales en el %
-    
-
     ## SUBFASE 5.1 (PERCENTILES MANUALES): DINAMICA INTRA-SEGMENTO — reemplaza al RMS promedio (muerto tras LUFS)
 
     rms_frames = librosa.feature.rms(y=seg)[0] # Devuelve un array de valores de presion sonora en cada frame (más constante, más pesado)
@@ -346,16 +278,15 @@ def extract_segment(seg: np.ndarray, sr: int, b_idx: int, meter: "pyln.Meter") -
 
     ## SUBFASE 6: NORMALIZACION Y SCORES DE DOS EJES (energía / ritmo)
 
-    onset_n = _norm(onset_density, ONSET_LO, ONSET_HI, type="linear")
-    tempo_n = _norm(bpm_folded, TEMPO_LO, TEMPO_HI, type="linear")
-    cent_n  = _norm(centroid, CENT_LO, CENT_HI, type="linear")
-    ostr_n  = _norm(onset_strength_mean, OSTR_LO, OSTR_HI, type="linear")
-    flat_n  = _norm(flatness, FLAT_LO, FLAT_HI, type="linear")
-    zcr_n   = _norm(zcr, ZCR_LO, ZCR_HI, type="linear")
-    perc_n  = _norm(perc_ratio, PERC_LO, PERC_HI, type="linear")
-    
-    dyn_n   = _norm(dyn_spread, DYN_LO, DYN_HI, type="sqrt")
-    dyn_n_lra = _norm(lra, LRA_LO, LRA_HI, type="linear")
+    onset_n = normalize(onset_density, ONSET_LO, ONSET_HI, kind="linear")
+    tempo_n = normalize(bpm_folded, TEMPO_LO, TEMPO_HI, kind="linear")
+    cent_n  = normalize(centroid, CENT_LO, CENT_HI, kind="linear")
+    ostr_n  = normalize(onset_strength_mean, OSTR_LO, OSTR_HI, kind="linear")
+    flat_n  = normalize(flatness, FLAT_LO, FLAT_HI, kind="linear")
+    zcr_n   = normalize(zcr, ZCR_LO, ZCR_HI, kind="linear")
+
+    dyn_n   = normalize(dyn_spread, DYN_LO, DYN_HI, kind="sqrt")
+    dyn_n_lra = normalize(lra, LRA_LO, LRA_HI, kind="linear")
     
 
     # Ruidosidad combinada: flatness y zcr miden lo mismo desde dos ángulos,
@@ -368,7 +299,7 @@ def extract_segment(seg: np.ndarray, sr: int, b_idx: int, meter: "pyln.Meter") -
     score_energia = 0.35 * noise_n + 0.35 * ostr_n + 0.20 * cent_n + 0.10 * (1.0 - dyn_n)
     score_energia_lra = 0.35 * noise_n + 0.35 * ostr_n + 0.20 * cent_n + 0.10 * (1.0 - dyn_n_lra)
     # Eje RITMO (contemplativa <-> rítmica): onsets fuertes + percusividad + tempo
-    score_ritmo   = 0.45 * onset_n + 0.35 * perc_n + 0.20 * tempo_n
+    score_ritmo   = 0.45 * onset_n + 0.20 * tempo_n
 
     logger.info(f" ## SEGMENTO {b_idx + 1} SCORES: score_energia: {round(score_energia, 4)}, score_ritmo: {round(score_ritmo, 4)}")
     logger.info(f" ## (ADICIONAL) SEGMENTO {b_idx + 1} SCORES: dyn_n: {round(dyn_spread, 2)}, lra: {round(lra, 2)}, dyn_n_normalized: {round(dyn_n, 2)}, dyn_n_lra: {round(dyn_n_lra, 2)}")
@@ -384,7 +315,6 @@ def extract_segment(seg: np.ndarray, sr: int, b_idx: int, meter: "pyln.Meter") -
         "centroid_hz":         round(centroid, 1),
         "flatness":            round(flatness, 6),
         "zcr":                 round(zcr, 5),
-        "perc_ratio":          round(perc_ratio, 4),
         "dyn_spread":          round(dyn_spread, 5),
         "lra":                 round(lra, 4),
         "score_energia":       round(score_energia, 4),
@@ -394,8 +324,7 @@ def extract_segment(seg: np.ndarray, sr: int, b_idx: int, meter: "pyln.Meter") -
         "onset_n":             round(onset_n, 4), "tempo_n": round(tempo_n, 4),
         "cent_n":              round(cent_n, 4),   "ostr_n": round(ostr_n, 4),
         "flat_n":              round(flat_n, 4),   "zcr_n": round(zcr_n, 4),
-        "perc_n":              round(perc_n, 4),   "dyn_n": round(dyn_n, 4),
-        "hpss_duration":       round(time_end_hpss - time_start_hpss, 4),
+        "dyn_n": round(dyn_n, 4),
     }
 
 def process_file(mp3_path: Path, album: str = "") -> dict:
@@ -482,9 +411,9 @@ def process_file(mp3_path: Path, album: str = "") -> dict:
     summary["score_noise_promedio"] = agg_media(noise_scores)
     summary["score_noise_mediana"]  = agg_mediana(noise_scores)
     # pendiente: regresión lineal simple (tendencia sostenida), un eje por separado
-    summary["pendiente_energia"] = round(_slope(energia_scores), 4)
-    summary["pendiente_energia_lra"] = round(_slope(energia_lra_scores), 4)
-    summary["pendiente_ritmo"]   = round(_slope(ritmo_scores), 4)
+    summary["pendiente_energia"] = round(slope(energia_scores), 4)
+    summary["pendiente_energia_lra"] = round(slope(energia_lra_scores), 4)
+    summary["pendiente_ritmo"]   = round(slope(ritmo_scores), 4)
     # delta: mean(último 25%) - mean(primer 25%), detecta un clímax final que
     # la pendiente diluye cuando hay muchos segmentos (ej. Exit Music)
     summary["delta_energia"] = round(delta_extremos(energia_scores), 4)
@@ -535,10 +464,10 @@ def main():
     if not folder.exists():
         sys.exit(f"[ERROR] Carpeta no encontrada: {folder}")
 
-    musics_names = load_canciones(CANCIONES_XLSX)
+    musics_names = load_music(CANCIONES_XLSX)
     mp3_files = [
         p.stem for p in sorted(folder.glob("*.mp3"))
-            if p.stem in musics_names
+            if p.stem in musics_names["music_name"].tolist()
     ]
     albums = load_albums(CANCIONES_XLSX)
 

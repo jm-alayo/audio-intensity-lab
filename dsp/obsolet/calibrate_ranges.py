@@ -3,6 +3,9 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))   # music-tagger-benchmark/ -- para poder importar shared/
+from shared.utils import percentile
+
 FEATURES_CRUDAS = [
     "onset_density", "onset_strength_mean", "bpm_folded",
     "centroid_hz", "flatness", "zcr", "perc_ratio",
@@ -32,17 +35,6 @@ def cargar_valores_por_feature(csv_path: Path) -> dict[str, list[float]]:
     return valores
 
 
-def percentil(vals: list[float], p: float) -> float:
-    vals = sorted(vals)
-    if not vals:
-        return float("nan")
-    k = (len(vals) - 1) * (p / 100)
-    f, c = int(k), min(int(k) + 1, len(vals) - 1)
-    if f == c:
-        return vals[f]
-    return vals[f] + (vals[c] - vals[f]) * (k - f)
-
-
 def calibrar(csv_path: Path, p_lo: float = 5, p_hi: float = 95) -> dict[str, tuple]:
     datos = cargar_valores_por_feature(csv_path)
     rangos = {}
@@ -51,7 +43,7 @@ def calibrar(csv_path: Path, p_lo: float = 5, p_hi: float = 95) -> dict[str, tup
         if len(vals) < 10:
             print(f"  [AVISO] {feat}: solo {len(vals)} valores — muy pocos para "
                   f"un percentil confiable, esperar a correr sobre las 119 completas.")
-        lo, hi = percentil(vals, p_lo), percentil(vals, p_hi)
+        lo, hi = percentile(vals, p_lo), percentile(vals, p_hi)
         rangos[feat] = (round(lo, 6), round(hi, 6), len(vals))
     return rangos
 

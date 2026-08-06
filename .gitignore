@@ -16,6 +16,8 @@
 
 dsp/out
 dsp/models-tree
+dsp/files
+dsp/definitions
 
 # ── Python 
 __pycache__/
