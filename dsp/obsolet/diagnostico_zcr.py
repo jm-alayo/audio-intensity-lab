@@ -1,6 +1,3 @@
-# diagnostico_zcr.py — antes de decidir entre hipotesis A y B, mira la
-# distribucion completa, no solo el p5/p95
-
 import pandas as pd
 from collections import defaultdict
 from pathlib import Path
@@ -20,7 +17,6 @@ df = pd.read_csv(
 )
 
 print(f"Archivo: {f'_features_{id}_rock_english_segmin25.csv'}")
-
 
 valores = defaultdict(list)
 for row in df.itertuples(index=False):

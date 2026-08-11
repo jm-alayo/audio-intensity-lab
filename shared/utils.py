@@ -7,6 +7,19 @@ import pandas as pd
 def filename_key(filename: str) -> str:
     return filename.removesuffix(".mp3").lower()
 
+def load_music_xlsx(xlsx_path: Path) -> list[str]:
+
+    sheet_name = "data"
+
+    df = pd.read_excel(xlsx_path, sheet_name=sheet_name, dtype=str)
+
+    df = df[
+        (df["categorico"].str.strip() != "sin_categoria")
+        & (df["album"].str.strip() == "album-rock")
+    ]
+
+    return df
+
 def find_latest_summary(out_dir: Path, playlist: str, id: int = None) -> Path | None:
 
     if id is not None:
@@ -19,7 +32,7 @@ def find_latest_summary(out_dir: Path, playlist: str, id: int = None) -> Path | 
 
     return max(candidatos, key=lambda t: t[0])[1] if candidatos else None
 
-def find_current_id(out_dir: Path, playlist: str, segmin: int) -> int:
+def find_current_id(out_dir: Path, playlist: str, segmin: int = 25) -> int:
 
     pattern = re.compile(rf"^_(?:summary|features)_(\d+)_{re.escape(playlist)}_segmin{segmin}\.csv$")
     ids = [
@@ -90,3 +103,33 @@ def percentile(values: list[float], p: float) -> float:
         return vals[f]
 
     return vals[f] + (vals[c] - vals[f]) * (k - f)
+
+def prepare_summary(summary_file: Path, xlsx_path: Path) -> pd.DataFrame:
+
+    df = pd.read_csv(summary_file, sep=";")
+    labels = load_music_xlsx(xlsx_path)
+
+    labels["categorico"] = labels["categorico"].replace(
+        {"incrementable": "incrementable-decreciente", "decreciente": "incrementable-decreciente"})
+
+    df = df.merge(labels[["music_name", "categorico"]], on="music_name")
+
+    return df[df["categorico"].str.strip() != "sin_categoria"]
+
+def derive_threshold_bounds(df: pd.DataFrame, p_lo: float = 5, p_hi: float = 95) -> list[tuple]:
+
+    def bound(values: pd.Series) -> tuple:
+        vals = values.tolist()
+
+        return percentile(vals, p_lo), percentile(vals, p_hi)
+
+    cambio_energia = (df["pendiente_energia"] * (df["n_segments"] - 1)).abs()
+    delta_energia = df["delta_energia"].abs()
+
+    return [
+        bound(df["score_energia_mediana"]),
+        bound(df["score_ritmo_mediana"]),
+        bound(df["score_noise_mediana"]),
+        bound(cambio_energia),
+        bound(delta_energia),
+    ]

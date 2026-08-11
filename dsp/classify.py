@@ -15,17 +15,11 @@ SCRIPT_DIR   = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT))   # music-tagger-benchmark/ -- para poder importar shared/
 
 from shared.settings import CANCIONES_XLSX
-from shared.utils import find_latest_summary, filename_key
+from shared.utils import find_latest_summary, filename_key, load_music_xlsx
 from shared.ml_func import MLFunc
-from extract_features import load_music
 
 OUT_DIR = SCRIPT_DIR / "out"
 
-# Umbrales calibrados sobre los HUECOS de la distribución del run rock_english
-# (v2, 10 canciones), no sobre la mediana (que fuerza un split 50/50 arbitrario
-# — así fue como Love Hurts terminó mal clasificada la vez pasada).
-# RECALIBRAR tras correr v3 y tras ampliar el dataset: son válidos para esta
-# escala comprimida, no absolutos.
 THR_E      = 0.335   # hueco energía: 0.313 → 0.361
 THR_R      = 0.390   # hueco ritmo:   0.332 → 0.451
 THR_CAMBIO = 0.10    # cambio total de energía inicio→fin (pendiente * (n_segments-1))
@@ -33,31 +27,31 @@ THR_DELTA  = 0.12    # delta_extremos — atrapa clímax concentrados (v3, ej. E
 THR_MARGEN = 0.04    # distancia al umbral bajo la cual se pide revisión manual
 THR_NOISE = 0.5
 
-# CATEGORIAS = ["alta-agresiva", "alta-ritmica", "baja-contemplativa", "baja-ritmica", "incrementable", "decreciente"]
 CATEGORIAS = ["alta-agresiva", "alta-ritmica", "baja-contemplativa", "baja-ritmica", "incrementable-decreciente"]
 
 def classify_2d(
         energia: float, noise: float,
         ritmo: float, 
         pendiente_energia: float,
-        pendiente_ritmo: float, delta_ritmo: float,
+        pendiente_ritmo: float, 
+        delta_ritmo: float,
         delta_energia: float, 
         n_segments: int,
-        thr_e: float = THR_E, thr_r: float = THR_R, thr_noise: float = THR_NOISE,
-        thr_cambio: float = THR_CAMBIO, thr_delta: float = THR_DELTA,
+        thr_e: float = THR_E, 
+        thr_r: float = THR_R, 
+        thr_noise: float = THR_NOISE,
+        thr_cambio: float = THR_CAMBIO, 
+        thr_delta: float = THR_DELTA,
         thr_margen: float = THR_MARGEN
     ) -> dict:
 
-    # se multiplica porque la pendiente por si sola es engañosa, tenemos que agregar a la ecuacion los segmentos totales
     cambio_e = pendiente_energia * (n_segments - 1)
 
-    # Paso 1: tendencia como gate
     if cambio_e >= thr_cambio or delta_energia >= thr_delta:
 
         margen = max(cambio_e - thr_cambio, delta_energia - thr_delta)
         
         return {
-                # "categoria": "incrementable", 
                 "categoria": "incrementable-decreciente",
                 "cambio_energia": round(cambio_e, 3),
                 "margen": round(margen, 3),
@@ -69,29 +63,31 @@ def classify_2d(
         margen = max(-thr_cambio - cambio_e, -thr_delta - delta_energia)
 
         return {
-            # "categoria": "decreciente", 
             "categoria": "incrementable-decreciente",
             "cambio_energia": round(cambio_e, 3),
             "margen": round(margen, 3), 
             "revisar": bool(margen < thr_margen)
         }
 
-    # Paso 2: grilla 2D
     e_alta = energia >= thr_e
     r_alto = ritmo >= thr_r
+    
     if e_alta and r_alto:
         cat = "alta-ritmica"
+
     elif e_alta:
         cat = "alta-agresiva"
+
     elif r_alto:
         cat = "baja-ritmica"
+
     else:
         cat = "baja-contemplativa"
 
-    # Paso 3: margen de confianza (también contra el gate de tendencia: una
-    # canción con cambio 0.09 casi fue incrementable → revisar)
     margen = min(
-        abs(energia - thr_e), abs(ritmo - thr_r), abs(noise - thr_noise),
+        abs(energia - thr_e), 
+        abs(ritmo - thr_r), 
+        abs(noise - thr_noise),
         abs(abs(pendiente_energia*(n_segments-1)) - thr_cambio),
         abs(abs(pendiente_ritmo*(n_segments-1)) - thr_cambio)
     )
@@ -103,18 +99,15 @@ def classify_2d(
         "revisar": bool(margen < thr_margen)
     }
 
-
 def load_categoricos(xlsx_path: Path = CANCIONES_XLSX) -> dict[str, dict]:
 
-    df = load_music(xlsx_path)
+    df = load_music_xlsx(xlsx_path)
 
     return {
         filename_key(row["music_name"].strip()): {"categoria": row["categorico"], "spotify_url": ""}
         for _, row in df.iterrows()
     }
 
-# Cada escenario evalúa la misma clasificación con distintas columnas de
-# entrada: (col_energia, col_ritmo, col_pendiente_energia, col_delta_energia)
 ESCENARIOS = {
     "promedios_rms": ("score_energia_promedio",     "score_ritmo_promedio", "score_noise_promedio", "pendiente_energia",     "delta_energia",     "pendiente_ritmo", "delta_ritmo"),
     "medianas_rms":  ("score_energia_mediana",      "score_ritmo_mediana",  "score_noise_mediana",  "pendiente_energia",     "delta_energia",     "pendiente_ritmo", "delta_ritmo"),

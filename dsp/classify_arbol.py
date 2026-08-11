@@ -37,14 +37,14 @@ def classify_tree_row(row: pd.Series, modelo, features_cols: list[str], categori
     categorico = categoricos.get(nombre, {})
 
     return {
-        "filename":           row["filename"],
-        "spotify_url":        categorico.get("spotify_url", ""),
-        "duration_s":         row.get("duration_s", ""),
-        "cambio_energia":     "",   # no aplica al arbol -- se deja vacio por compatibilidad de columnas
-        "margen":             rank["margen"],
+        "filename": row["filename"],
+        "spotify_url": categorico.get("spotify_url", ""),
+        "duration_s": row.get("duration_s", ""),
+        "cambio_energia": "",
+        "margen": rank["margen"],
         "categoria_sugerida": rank["top1_categoria"],
-        "categoria_humano":   categorico.get("categoria", ""),
-        "revisar":            bool(rank["margen"] < THR_MARGEN_ARBOL),
+        "categoria_humano": categorico.get("categoria", ""),
+        "revisar": bool(rank["margen"] < THR_MARGEN_ARBOL),
     }
 
 
