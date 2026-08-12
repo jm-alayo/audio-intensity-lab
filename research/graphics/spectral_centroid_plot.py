@@ -1,3 +1,4 @@
+import sys
 import librosa
 import librosa.display
 import matplotlib.pyplot as plt
@@ -6,14 +7,15 @@ from pathlib import Path
 import pyloudnorm as pyln
 import time
 
-# 1. SEÑAL Y FRECUENCIA (Carga de datos)
-PROJECT_ROOT = Path(__file__).parent.parent
-PLAYLIST_BASE = PROJECT_ROOT / "spotdl-poc" / "out-playlist" / "rock_english"
-SR = 22050
-TARGET_LUFS = -23.0    # normalización EBU R128
-TRIM_DB=45
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-path_audio = PLAYLIST_BASE / "Radiohead - Exit Music (For A Film).mp3"
+from shared.settings import PLAYLIST_BASE
+
+SR = 22050
+TARGET_LUFS = -23.0
+TRIM_DB = 45
+
+path_audio = PLAYLIST_BASE / "rock_english" / "Radiohead - Exit Music (For A Film).mp3"
 #path_audio = PLAYLIST_BASE / "Milky Chance - Stolen Dance.mp3"
 #path_audio = PLAYLIST_BASE / "Vundabar - Alien Blues.mp3"
 

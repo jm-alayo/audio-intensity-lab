@@ -5,13 +5,11 @@ import logging
 from collections import defaultdict
 from pathlib import Path
 
-DSP_DIR = Path(__file__).parent.parent
-sys.path.insert(0, str(DSP_DIR))
-sys.path.insert(0, str(DSP_DIR.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared.settings import FEATURES_DIR
 from shared.utils import percentile
-from extract_features import (
+from features.config import (
     ONSET_LO, ONSET_HI, TEMPO_LO, TEMPO_HI, CENT_LO, CENT_HI,
     OSTR_LO, OSTR_HI, FLAT_LO, FLAT_HI, ZCR_LO, ZCR_HI,
     DYN_LO, DYN_HI, LRA_LO, LRA_HI,
@@ -28,7 +26,7 @@ FEATURE_BOUNDS = {
     "lra":                 (LRA_LO, LRA_HI),
 }
 
-FEATURES_CRUDAS = list(FEATURE_BOUNDS.keys())
+RAW_FEATURES = list(FEATURE_BOUNDS.keys())
 
 DEVIATION_ALERT_RATIO = 0.3
 MIN_RELIABLE_SAMPLES = 10
@@ -39,7 +37,7 @@ def load_values_by_feature(features_csv: Path, features_names: list[str] = None)
 
     values = defaultdict(list)
 
-    df = pd.read_csv(features_csv, sep=";", encoding="utf-8")
+    df = pd.read_csv(features_csv, sep=";", encoding="utf-8", engine="python", on_bad_lines="skip")
 
     if features_names is None:
         features_names = df.iloc[:, 0].unique().tolist()
@@ -56,11 +54,11 @@ def load_values_by_feature(features_csv: Path, features_names: list[str] = None)
 
 def calibrate_ranges(features_csv: Path, p_lo: float = 5, p_hi: float = 95) -> dict[str, tuple]:
 
-    feature_data = load_values_by_feature(features_csv, FEATURES_CRUDAS)
+    feature_data = load_values_by_feature(features_csv, RAW_FEATURES)
 
     ranges = {}
 
-    for feat in FEATURES_CRUDAS:
+    for feat in RAW_FEATURES:
         vals = feature_data.get(feat, [])
 
         if len(vals) < MIN_RELIABLE_SAMPLES:

@@ -1,0 +1,49 @@
+import os
+
+N_WORKERS = 3
+N_WORKERS = os.cpu_count() if N_WORKERS == -1 else N_WORKERS
+
+SR = 22050
+TRIM_DB = 45
+TARGET_LUFS = -23.0
+MIN_LUFS = -70.0
+SEGMENT_MIN_DURATION = 25
+
+LRA_LO = (1.0, 0.9372)
+LRA_HI = (8.0, 13.0)
+LRA_BLOCK_S = 3.0
+LRA_HOP_S = 1.0
+LRA_ABS_GATE_LUFS = -70.0
+LRA_REL_GATE_LU = 20.0
+
+ONSET_LO = (0.5, 2.3124)
+ONSET_HI = (4.0, 5.6605)
+TEMPO_LO = (70.0, 71.78)
+TEMPO_HI = (140.0, 136.0)
+CENT_LO = (800.0, 1437.63)
+CENT_HI = (3500.0, 2976.01)
+OSTR_LO = (0.5, 1.0283)
+OSTR_HI = (3.5, 1.8669)
+FLAT_LO = (0.001, 0.0034)
+FLAT_HI = (0.05, 0.0437)
+ZCR_LO = (0.03, 0.0541)
+ZCR_HI = (0.15, 0.1604)
+DYN_LO = (0.01, 0.0305)
+DYN_HI = (0.06, 0.0961)
+
+ONSET_GATE_PCT = 60
+DEFAULT_BATCH = 20
+
+CONFIG_SECTIONS = {
+    "general": [
+        "SR", "TRIM_DB", "TARGET_LUFS", "MIN_LUFS", "ONSET_GATE_PCT", "DEFAULT_BATCH",
+    ],
+    "calibration": [
+        "ONSET_LO", "ONSET_HI", "TEMPO_LO", "TEMPO_HI", "CENT_LO", "CENT_HI",
+        "OSTR_LO", "OSTR_HI", "FLAT_LO", "FLAT_HI", "ZCR_LO", "ZCR_HI",
+        "DYN_LO", "DYN_HI",
+    ],
+    "lra": [
+        "LRA_BLOCK_S", "LRA_HOP_S", "LRA_ABS_GATE_LUFS", "LRA_REL_GATE_LU",
+    ],
+}

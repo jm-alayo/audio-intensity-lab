@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 import logging
 import librosa
@@ -5,6 +6,10 @@ import numpy as np
 import pandas as pd
 
 from scipy.stats import spearmanr, pearsonr
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from shared.settings import FEATURES_DIR
 
 SPEARMAN_SEGURO = 0.98
 SPEARMAN_LIMITE = 0.95
@@ -129,8 +134,6 @@ def _perc_ratio_long(df: pd.DataFrame, nombre_col: str) -> pd.DataFrame:
 def main():
 
     KERNEL_SIZE = 9
-    PROJECT_ROOT = Path(__file__).parent.parent.parent
-    FEATURES_DIR = PROJECT_ROOT / "data" / "features"
 
     df_kbase = pd.read_csv(FEATURES_DIR / "_features_10_rock_english_segmin25.csv", encoding="utf-8-sig", sep=";")
     df5_k31 = pd.read_csv(FEATURES_DIR / "_features_5_rock_english_segmin25.csv", encoding="utf-8-sig", sep=";")

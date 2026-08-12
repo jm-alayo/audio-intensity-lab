@@ -3,23 +3,16 @@
 *.flac
 *.m4a
 
-# Carátulas embebidas por spotdl/yt-dlp
 *.jpg
 *.jpeg
 *.png
 
-# Se regeneran corriendo los scripts; no hace falta versionarlos.
 *.csv
+!research/legacy_labels/*.csv
 
-# Excepción: datasets curados a mano, no se regeneran automáticamente.
-!dsp/files/*.csv
+ml/artifacts
+ml/runs
 
-dsp/out
-dsp/models-tree
-dsp/files
-dsp/definitions
-
-# ── Python 
 __pycache__/
 *.pyc
 *.pyo
@@ -29,7 +22,14 @@ venv/
 env/
 .env
 
-# ── Sistema operativo / editor
+definitions/
+/ml/runs/*
+ml/artifacts/*
+data/features/*
+research/legacy_runs/*
+research/legacy_models/*
+research/legacy_labels/*
+
 .DS_Store
 Thumbs.db
 *.log

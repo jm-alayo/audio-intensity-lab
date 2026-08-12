@@ -1,16 +1,20 @@
+import sys
 import pandas as pd
 from pathlib import Path
 import logging
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from shared.settings import FEATURES_DIR
+
+WORKER_BENCHMARK_CSV = FEATURES_DIR / "time" / "registro_tiempo_original.csv"
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-SCRIPT_DIR = Path(__file__).parent
-TIME_LOG_CSV = SCRIPT_DIR / "files" / "registro_tiempo.csv"
-
 def analyze_execution_times():
     df = pd.read_csv(
-        TIME_LOG_CSV,
+        WORKER_BENCHMARK_CSV,
         sep=";",
         encoding="cp1252",
         keep_default_na=False

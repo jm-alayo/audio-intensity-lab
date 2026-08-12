@@ -16,45 +16,18 @@ import pyloudnorm as pyln
 from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from shared.settings import PLAYLIST_BASE, CANCIONES_XLSX, FEATURES_DIR, TIME_LOG_CSV
-from shared.utils import find_current_id, slope, delta_extremos, agg_media, agg_mediana, normalize, load_music_xlsx
+from shared.settings import PLAYLIST_BASE, TRACKS_XLSX, FEATURES_DIR, TIME_LOG_CSV
+from shared.utils import find_current_id, slope, extremes_delta, aggregate_mean, aggregate_median, normalize, load_tracks
+from features.config import (
+    N_WORKERS, SR, TRIM_DB, TARGET_LUFS, MIN_LUFS, SEGMENT_MIN_DURATION,
+    LRA_LO, LRA_HI, LRA_BLOCK_S, LRA_HOP_S, LRA_ABS_GATE_LUFS, LRA_REL_GATE_LU,
+    ONSET_LO, ONSET_HI, TEMPO_LO, TEMPO_HI, CENT_LO, CENT_HI,
+    OSTR_LO, OSTR_HI, FLAT_LO, FLAT_HI, ZCR_LO, ZCR_HI, DYN_LO, DYN_HI,
+    ONSET_GATE_PCT, CONFIG_SECTIONS,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-N_WORKERS = 3
-N_WORKERS = os.cpu_count() if N_WORKERS == -1 else N_WORKERS
-
-SR = 22050
-TRIM_DB = 45
-TARGET_LUFS = -23.0
-MIN_LUFS = -70.0
-SEGMENT_MIN_DURATION = 25
-
-LRA_LO = (1.0, 0.9372)
-LRA_HI = (8.0, 13.0)
-LRA_BLOCK_S = 3.0
-LRA_HOP_S = 1.0
-LRA_ABS_GATE_LUFS = -70.0
-LRA_REL_GATE_LU = 20.0
-
-ONSET_LO = (0.5, 2.3124)
-ONSET_HI = (4.0, 5.6605)
-TEMPO_LO = (70.0, 71.78)
-TEMPO_HI = (140.0, 136.0)
-CENT_LO = (800.0, 1437.63)
-CENT_HI = (3500.0, 2976.01)
-OSTR_LO = (0.5, 1.0283)
-OSTR_HI = (3.5, 1.8669)
-FLAT_LO = (0.001, 0.0034)
-FLAT_HI = (0.05, 0.0437)
-ZCR_LO = (0.03, 0.0541)
-ZCR_HI = (0.15, 0.1604)
-DYN_LO = (0.01, 0.0305)
-DYN_HI = (0.06, 0.0961)
-
-ONSET_GATE_PCT = 60
-DEFAULT_BATCH = 20
 
 BASE_COLS = ["music_name", "duration_s", "n_segments"]
 
@@ -73,25 +46,11 @@ SUMMARY_COLS = BASE_COLS + [
     "score_noise_promedio", "score_noise_mediana",
 ] + COMPONENT_COLS + ["error"]
 
-FEATURES = ["onset_n_mediana", "tempo_n_mediana", "cent_n_mediana", "ostr_n_mediana", "flat_n_mediana", "zcr_n_mediana", "dyn_n_mediana", "pendiente_energia", "delta_energia", "pendiente_ritmo", "delta_ritmo","n_segments"]
-
-CONFIG_SECCIONES = {
-    "variables generales": [
-        "SR", "TRIM_DB", "TARGET_LUFS", "MIN_LUFS", "ONSET_GATE_PCT", "DEFAULT_BATCH",
-    ],
-    "variables de calibracion": [
-        "ONSET_LO", "ONSET_HI", "TEMPO_LO", "TEMPO_HI", "CENT_LO", "CENT_HI",
-        "OSTR_LO", "OSTR_HI", "FLAT_LO", "FLAT_HI", "ZCR_LO", "ZCR_HI",
-        "DYN_LO", "DYN_HI",
-    ],
-    "variables LRA": [
-        "LRA_BLOCK_S", "LRA_HOP_S", "LRA_ABS_GATE_LUFS", "LRA_REL_GATE_LU",
-    ],
-}
+FEATURES = ["onset_n_mediana", "tempo_n_mediana", "cent_n_mediana", "ostr_n_mediana", "flat_n_mediana", "zcr_n_mediana", "dyn_n_mediana", "pendiente_energia", "delta_energia", "pendiente_ritmo", "delta_ritmo", "n_segments"]
 
 def log_audit_time_processing(music_name: str, start_time: float, end_time: float, hpss_duration: float) -> None:
 
-    fila = pd.DataFrame([{
+    row = pd.DataFrame([{
         "music_name":    music_name,
         "worker_id":     os.getpid(),
         "total_duration": round(end_time - start_time, 4),
@@ -101,19 +60,19 @@ def log_audit_time_processing(music_name: str, start_time: float, end_time: floa
 
     TIME_LOG_CSV.parent.mkdir(parents=True, exist_ok=True)
 
-    existe = TIME_LOG_CSV.exists() and TIME_LOG_CSV.stat().st_size > 0
+    exists = TIME_LOG_CSV.exists() and TIME_LOG_CSV.stat().st_size > 0
 
-    fila.to_csv(TIME_LOG_CSV, sep=";", mode="a", index=False, header=not existe, encoding="utf-8")
+    row.to_csv(TIME_LOG_CSV, sep=";", mode="a", index=False, header=not exists, encoding="utf-8")
 
 def dump_config(out_dir: Path, playlist: str, segmin: int, id: int) -> Path:
 
     rows = [
         {
-            "seccion": seccion,
-            "nom_variable": nombre,
-            "valor": globals()[nombre]
-        } for seccion, nombres in CONFIG_SECCIONES.items()
-            for nombre in nombres
+            "seccion": section,
+            "nom_variable": name,
+            "valor": globals()[name]
+        } for section, names in CONFIG_SECTIONS.items()
+            for name in names
     ]
 
     variables_dir = out_dir / "variables"
@@ -181,7 +140,7 @@ def compute_lra(seg: np.ndarray, sr: int, meter: "pyln.Meter") -> float:
 
     rel_threshold = float(np.mean(abs_gated)) - LRA_REL_GATE_LU
     rel_gated = abs_gated[abs_gated >= rel_threshold]
-    
+
     if len(rel_gated) < 3:
         rel_gated = abs_gated
 
@@ -264,11 +223,11 @@ def extract_segment(seg: np.ndarray, sr: int, b_idx: int, meter: "pyln.Meter") -
         "score_energia_lra":   round(score_energia_lra, 4),
         "score_ritmo":         round(score_ritmo, 4),
         "noise_n":             round(noise_n, 4),
-        "onset_n":             round(onset_n, 4), 
+        "onset_n":             round(onset_n, 4),
         "tempo_n":             round(tempo_n, 4),
-        "cent_n":              round(cent_n, 4),   
+        "cent_n":              round(cent_n, 4),
         "ostr_n":              round(ostr_n, 4),
-        "flat_n":              round(flat_n, 4),   
+        "flat_n":              round(flat_n, 4),
         "zcr_n":               round(zcr_n, 4),
         "dyn_n":               round(dyn_n, 4)
     }
@@ -320,10 +279,10 @@ def process_file(mp3_path: Path) -> dict:
     meter = pyln.Meter(sr)
     feats = [extract_segment(s, sr, b_idx=b_idx, meter=meter) for b_idx, s in enumerate(segments)]
 
-    energia_scores = [f["score_energia"] for f in feats]
-    energia_lra_scores = [f["score_energia_lra"] for f in feats]
-    ritmo_scores   = [f["score_ritmo"]   for f in feats]
-    noise_scores   = [f["noise_n"]      for f in feats]
+    energy_scores = [f["score_energia"] for f in feats]
+    energy_lra_scores = [f["score_energia_lra"] for f in feats]
+    rhythm_scores = [f["score_ritmo"] for f in feats]
+    noise_scores  = [f["noise_n"] for f in feats]
 
     summary = {
         "music_name":   mp3_path.stem,
@@ -333,23 +292,23 @@ def process_file(mp3_path: Path) -> dict:
 
     for comp in ["onset_n","tempo_n","cent_n","ostr_n","flat_n","zcr_n","dyn_n"]:
         vals = [f[comp] for f in feats]
-        summary[f"{comp}_promedio"] = agg_media(vals)
-        summary[f"{comp}_mediana"]  = agg_mediana(vals)
+        summary[f"{comp}_promedio"] = aggregate_mean(vals)
+        summary[f"{comp}_mediana"]  = aggregate_median(vals)
 
-    summary["score_energia_promedio"] = agg_media(energia_scores)
-    summary["score_energia_mediana"]  = agg_mediana(energia_scores)
-    summary["score_ritmo_promedio"]   = agg_media(ritmo_scores)
-    summary["score_ritmo_mediana"]    = agg_mediana(ritmo_scores)
-    summary["score_energia_lra_promedio"] = agg_media(energia_lra_scores)
-    summary["score_energia_lra_mediana"]  = agg_mediana(energia_lra_scores)
-    summary["score_noise_promedio"] = agg_media(noise_scores)
-    summary["score_noise_mediana"]  = agg_mediana(noise_scores)
-    summary["pendiente_energia"] = round(slope(energia_scores), 4)
-    summary["pendiente_energia_lra"] = round(slope(energia_lra_scores), 4)
-    summary["pendiente_ritmo"]   = round(slope(ritmo_scores), 4)
-    summary["delta_energia"] = round(delta_extremos(energia_scores), 4)
-    summary["delta_energia_lra"] = round(delta_extremos(energia_lra_scores), 4)
-    summary["delta_ritmo"]   = round(delta_extremos(ritmo_scores), 4)
+    summary["score_energia_promedio"] = aggregate_mean(energy_scores)
+    summary["score_energia_mediana"]  = aggregate_median(energy_scores)
+    summary["score_ritmo_promedio"]   = aggregate_mean(rhythm_scores)
+    summary["score_ritmo_mediana"]    = aggregate_median(rhythm_scores)
+    summary["score_energia_lra_promedio"] = aggregate_mean(energy_lra_scores)
+    summary["score_energia_lra_mediana"]  = aggregate_median(energy_lra_scores)
+    summary["score_noise_promedio"] = aggregate_mean(noise_scores)
+    summary["score_noise_mediana"]  = aggregate_median(noise_scores)
+    summary["pendiente_energia"] = round(slope(energy_scores), 4)
+    summary["pendiente_energia_lra"] = round(slope(energy_lra_scores), 4)
+    summary["pendiente_ritmo"]   = round(slope(rhythm_scores), 4)
+    summary["delta_energia"] = round(extremes_delta(energy_scores), 4)
+    summary["delta_energia_lra"] = round(extremes_delta(energy_lra_scores), 4)
+    summary["delta_ritmo"]   = round(extremes_delta(rhythm_scores), 4)
     summary["error"] = ""
 
     features = pd.DataFrame({
@@ -406,8 +365,8 @@ def _worker(mp3_path_str: str):
         }
 
         summary.update({
-            "filename": mp3_path.stem,
-            "error":    str(exc)[:300],
+            "music_name": mp3_path.stem,
+            "error":      str(exc)[:300],
         })
 
         return None, summary
@@ -459,10 +418,10 @@ def main():
     if not folder.exists():
         sys.exit(f"[ERROR] Carpeta no encontrada: {folder}")
 
-    musics_names = load_music_xlsx(CANCIONES_XLSX)
+    tracks = load_tracks(TRACKS_XLSX)
     mp3_files = [
         p.stem for p in sorted(folder.glob("*.mp3"))
-            if p.stem in musics_names["music_name"].tolist()
+            if p.stem in tracks["music_name"].tolist()
     ]
 
     logger.info(f"Se encontraron {len(mp3_files)} canciones: playlist {playlist}")
@@ -479,6 +438,8 @@ def main():
     summary_csv = FEATURES_DIR / f"_summary_{id}_{playlist}_segmin{SEGMENT_MIN_DURATION}.csv"
     features_csv = FEATURES_DIR / f"_features_{id}_{playlist}_segmin{SEGMENT_MIN_DURATION}.csv"
 
+    dump_config(FEATURES_DIR, playlist, SEGMENT_MIN_DURATION, id)
+
     done = load_done(summary_csv)
     pending = [
         folder / f"{f}.mp3" for f in mp3_files
@@ -493,7 +454,7 @@ def main():
     logger.debug("=" * 60)
 
     if not pending:
-        logger.info("\nTodo ya está procesado. Ejecuta classify.py para clasificar.")
+        logger.info("\nTodo ya está procesado. Ejecuta ml/train.py para clasificar.")
 
         return
 
