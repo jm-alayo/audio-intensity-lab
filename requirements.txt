@@ -1,16 +1,3 @@
-# music-tagger-benchmark — requirements completo del proyecto (Route A dsp/ +
-# Route B dsp/llm-clap/ + scripts/). Un solo archivo, reemplaza a los parciales
-# anteriores (dsp/requirements.txt, requeriments-dsp.txt, requeriments-fewshot.txt).
-#
-# torch NO se instala desde este archivo: la GPU de este entorno (RTX 5060 /
-# Blackwell) requiere el build CUDA cu128, que vive en un index aparte de PyPI.
-# Instalar antes que el resto:
-#   pip install torch --index-url https://download.pytorch.org/whl/cu128
-# (ver dsp/llm-clap/clasify-laion.py y JUL-21-cierre-route-a-route-b.md)
-
-# Activar entorno: E:\enviroments\.jmusic-tagger\Scripts\Activate.ps1
-
-# ── Route A (dsp/) — DSP, features, clasificacion clasica y arboles ────────
 librosa>=0.10.0
 numpy>=1.24.0
 pandas>=2.0.0
@@ -22,14 +9,8 @@ scikit-learn>=1.3.0
 joblib>=1.3.0
 openpyxl>=3.1.0
 
-# ── Route A (dsp/test/) — graficos exploratorios ────────────────────────────
 matplotlib>=3.7.0
 mplcursors>=0.5.2
 
-# ── Route B (dsp/llm-clap/) — CLAP zero-shot ────────────────────────────────
-transformers>=4.40.0
-# torch instalado aparte, ver nota arriba
-
-# ── scripts/gemini-ai.py — clasificacion de genero via Gemini ──────────────
 google-genai>=1.0.0
 python-dotenv>=1.0.0
