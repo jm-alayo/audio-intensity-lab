@@ -13,6 +13,7 @@ def load_tracks(xlsx_path: Path) -> pd.DataFrame:
 
     df = pd.read_excel(xlsx_path, sheet_name="data", dtype=str)
 
+    
     return df[
         (df["categorico"].str.strip() != "sin_categoria")
         & (df["album"].str.strip() == "album-rock")

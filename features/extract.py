@@ -17,13 +17,13 @@ from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from shared.settings import PLAYLIST_BASE, TRACKS_XLSX, FEATURES_DIR, TIME_LOG_CSV
-from shared.utils import find_current_id, slope, extremes_delta, aggregate_mean, aggregate_median, normalize, load_tracks
+from shared.utils import find_current_id, next_free_id, slope, extremes_delta, aggregate_mean, aggregate_median, normalize, load_tracks
 from features.config import (
     N_WORKERS, SR, TRIM_DB, TARGET_LUFS, MIN_LUFS, SEGMENT_MIN_DURATION,
     LRA_LO, LRA_HI, LRA_BLOCK_S, LRA_HOP_S, LRA_ABS_GATE_LUFS, LRA_REL_GATE_LU,
     ONSET_LO, ONSET_HI, TEMPO_LO, TEMPO_HI, CENT_LO, CENT_HI,
     OSTR_LO, OSTR_HI, FLAT_LO, FLAT_HI, ZCR_LO, ZCR_HI, DYN_LO, DYN_HI,
-    ONSET_GATE_PCT, CONFIG_SECTIONS,
+    ONSET_GATE_PCT, DEFAULT_BATCH, CONFIG_SECTIONS,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -79,9 +79,11 @@ def dump_config(out_dir: Path, playlist: str, segmin: int, id: int) -> Path:
     variables_dir.mkdir(parents=True, exist_ok=True)
 
     out_csv = variables_dir / f"_config_{id}_{playlist}_segmin{segmin}.csv"
+
     pd.DataFrame(rows, columns=["seccion", "nom_variable", "valor"]).to_csv(
         out_csv, sep=";", index=False, encoding="utf-8"
     )
+    
     return out_csv
 
 def load_done(csv_path: Path) -> set[str]:
@@ -202,7 +204,7 @@ def extract_segment(seg: np.ndarray, sr: int, b_idx: int, meter: "pyln.Meter") -
 
     score_energia = 0.35 * noise_n + 0.35 * ostr_n + 0.20 * cent_n + 0.10 * (1.0 - dyn_n)
     score_energia_lra = 0.35 * noise_n + 0.35 * ostr_n + 0.20 * cent_n + 0.10 * (1.0 - dyn_n_lra)
-    score_ritmo   = 0.45 * onset_n + 0.20 * tempo_n
+    score_ritmo   = 0.70 * onset_n + 0.30 * tempo_n
 
     logger.info(f" ## SEGMENTO {b_idx + 1} SCORES: score_energia: {round(score_energia, 4)}, score_ritmo: {round(score_ritmo, 4)}")
     logger.info(f" ## (ADICIONAL) SEGMENTO {b_idx + 1} SCORES: dyn_n: {round(dyn_spread, 2)}, lra: {round(lra, 2)}, dyn_n_normalized: {round(dyn_n, 2)}, dyn_n_lra: {round(dyn_n_lra, 2)}")
@@ -375,15 +377,22 @@ def run_parallel(pending: list[Path], out_csv: Path, out_features_csv: Path):
 
     total_ok = total_fail = 0
 
-    file_exists = out_csv.exists()
-    features_file_exists = out_features_csv.exists()
+    file_exists = out_csv.exists() and out_csv.stat().st_size > 0
+
+    feature_frames = []
+    if out_features_csv.exists() and out_features_csv.stat().st_size > 0:
+        try:
+            feature_frames.append(pd.read_csv(
+                out_features_csv, sep=";", index_col=0, encoding="utf-8-sig",
+                engine="python", on_bad_lines="skip"))
+
+        except Exception:
+            pass
 
     with open(out_csv, "a", newline="", encoding="utf-8") as f, \
-         open(out_features_csv, "a", newline="", encoding="utf-8") as f_feat, \
          Pool(processes=N_WORKERS, initializer=_init_worker, maxtasksperchild=20) as pool:
 
         header_written = file_exists
-        features_header_written = features_file_exists
 
         job_args = [str(p) for p in pending]
         jobs = pool.imap_unordered(_worker, job_args, chunksize=1)
@@ -402,10 +411,11 @@ def run_parallel(pending: list[Path], out_csv: Path, out_features_csv: Path):
             header_written = True
 
             if features is not None:
-                features.to_csv(f_feat, sep=";", index=True,
-                                header=not features_header_written)
-                f_feat.flush()
-                features_header_written = True
+                feature_frames.append(features)
+
+    if feature_frames:
+        combined = pd.concat(feature_frames, axis=0, sort=False)
+        combined.to_csv(out_features_csv, sep=";", index=True, header=True)
 
     return total_ok, total_fail
 
@@ -432,15 +442,19 @@ def main():
     FEATURES_DIR.mkdir(parents=True, exist_ok=True)
 
     id = find_current_id(FEATURES_DIR, playlist, SEGMENT_MIN_DURATION)
-
-    id += 1 if id > 0 else 0
-
     summary_csv = FEATURES_DIR / f"_summary_{id}_{playlist}_segmin{SEGMENT_MIN_DURATION}.csv"
+    done = load_done(summary_csv)
+
+    if done and all(f in done for f in mp3_files):
+        # el run de `id` ya está completo -> se abre uno nuevo en vez de reprocesar todo
+        id = next_free_id(FEATURES_DIR, playlist, SEGMENT_MIN_DURATION)
+        summary_csv = FEATURES_DIR / f"_summary_{id}_{playlist}_segmin{SEGMENT_MIN_DURATION}.csv"
+        done = load_done(summary_csv)
+
     features_csv = FEATURES_DIR / f"_features_{id}_{playlist}_segmin{SEGMENT_MIN_DURATION}.csv"
 
     dump_config(FEATURES_DIR, playlist, SEGMENT_MIN_DURATION, id)
 
-    done = load_done(summary_csv)
     pending = [
         folder / f"{f}.mp3" for f in mp3_files
             if f not in done
