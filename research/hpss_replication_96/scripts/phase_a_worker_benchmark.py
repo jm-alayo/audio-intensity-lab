@@ -12,7 +12,7 @@ import pandas as pd
 import pyloudnorm as pyln
 from tqdm import tqdm
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from shared.settings import FEATURES_DIR
 import features.extract as extract_mod
@@ -22,9 +22,12 @@ from research.hpss_replication_96.common import AUDIO_DIR, load_segments, perc_r
 WORKER_CONFIGS = [1, 3, 16]
 RANDOM_SELECTION = 1
 RANDOM_SEED = 42
-RAW_OUT_CSV = Path(__file__).parent / "evidence" / "benchmark_worker_times_96.csv"
-SUMMARY_OUT_CSV = Path(__file__).parent / "evidence" / "worker_summary_96.csv"
-SAMPLE_OUT_CSV = Path(__file__).parent / "evidence" / "worker_sample_selection_96.csv"
+EVIDENCE_DIR = Path(__file__).parent.parent / "evidence" / "phase_a_workers"
+RAW_OUT_CSV = EVIDENCE_DIR / "times_with_hpss.csv"
+SUMMARY_OUT_CSV = EVIDENCE_DIR / "summary_with_hpss.csv"
+RAW_OUT_CSV_NO_HPSS = EVIDENCE_DIR / "times_without_hpss.csv"
+SUMMARY_OUT_CSV_NO_HPSS = EVIDENCE_DIR / "summary_without_hpss.csv"
+SAMPLE_OUT_CSV = EVIDENCE_DIR / "sample_selection.csv"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -166,7 +169,9 @@ def main():
     with_hpss = not args.no_hpss
 
     stage_order = list(reversed(WORKER_CONFIGS)) if args.reverse_order else WORKER_CONFIGS
-    suffix = ("_reversed" if args.reverse_order else "") + ("_no_hpss" if args.no_hpss else "")
+    suffix = "_reversed" if args.reverse_order else ""
+    base_raw = RAW_OUT_CSV if with_hpss else RAW_OUT_CSV_NO_HPSS
+    base_summary = SUMMARY_OUT_CSV if with_hpss else SUMMARY_OUT_CSV_NO_HPSS
 
     sample, n_segments = select_sample(random_selection=2)
     logger.info(f"Muestra: {len(sample)} canciones (RANDOM_SELECTION=2), n_segments {n_segments[0]}..{n_segments[-1]}")
@@ -188,8 +193,8 @@ def main():
         all_rows.extend(rows)
 
     df = pd.DataFrame(all_rows)
-    raw_out = RAW_OUT_CSV.parent / f"{RAW_OUT_CSV.stem}{suffix}.csv"
-    summary_out = SUMMARY_OUT_CSV.parent / f"{SUMMARY_OUT_CSV.stem}{suffix}.csv"
+    raw_out = base_raw.parent / f"{base_raw.stem}{suffix}.csv"
+    summary_out = base_summary.parent / f"{base_summary.stem}{suffix}.csv"
 
     raw_out.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(raw_out, sep=";", index=False, encoding="utf-8")

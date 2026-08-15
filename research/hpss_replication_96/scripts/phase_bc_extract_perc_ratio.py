@@ -8,12 +8,12 @@ from pathlib import Path
 import pandas as pd
 from tqdm import tqdm
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from research.hpss_replication_96.common import AUDIO_DIR, list_dataset_songs, load_segments, perc_ratio_actual, perc_ratio_fast
 
 KERNELS = [9, 11, 17]
-OUT_CSV = Path(__file__).parent / "evidence" / "perc_ratio_per_segment.csv"
+OUT_CSV = Path(__file__).parent.parent / "evidence" / "phase_b_kernel_validation" / "perc_ratio_per_segment.csv"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

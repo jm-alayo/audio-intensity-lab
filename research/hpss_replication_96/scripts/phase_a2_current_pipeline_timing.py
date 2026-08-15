@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pyloudnorm as pyln
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 import features.extract as extract_mod
 from features.extract import extract_segment
 from features.config import N_WORKERS
 from research.hpss_replication_96.common import AUDIO_DIR, load_segments
-from research.hpss_replication_96.phase_a_worker_benchmark import select_sample
+from research.hpss_replication_96.scripts.phase_a_worker_benchmark import select_sample
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from shared.settings import FEATURES_DIR, TRACKS_XLSX
 from shared.utils import find_latest_summary, prepare_summary, percentile, normalize, aggregate_median
@@ -14,11 +14,12 @@ from features.extract import FEATURES
 from ml.models import TreeClassifier
 from ml.evaluation import Evaluator
 
-PERC_SEGMENT_CSV = Path(__file__).parent / "evidence" / "perc_ratio_per_segment.csv"
-IMPORTANCE_OUT_CSV = Path(__file__).parent / "evidence" / "feature_importance_rf_with_perc.csv"
-CV_FOLDS_OUT_CSV = Path(__file__).parent / "evidence" / "ablation_cv_folds.csv"
-CV_SUMMARY_OUT_CSV = Path(__file__).parent / "evidence" / "ablation_summary.csv"
-PERC_BOUNDS_OUT_CSV = Path(__file__).parent / "evidence" / "perc_ratio_bounds.csv"
+EVIDENCE_DIR = Path(__file__).parent.parent / "evidence"
+PERC_SEGMENT_CSV = EVIDENCE_DIR / "phase_b_kernel_validation" / "perc_ratio_per_segment.csv"
+IMPORTANCE_OUT_CSV = EVIDENCE_DIR / "phase_c_ablation" / "feature_importance_rf_with_perc.csv"
+CV_FOLDS_OUT_CSV = EVIDENCE_DIR / "phase_c_ablation" / "ablation_cv_folds.csv"
+CV_SUMMARY_OUT_CSV = EVIDENCE_DIR / "phase_c_ablation" / "ablation_summary.csv"
+PERC_BOUNDS_OUT_CSV = EVIDENCE_DIR / "phase_c_ablation" / "perc_ratio_bounds.csv"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

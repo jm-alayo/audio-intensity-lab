@@ -10,8 +10,9 @@ DESVIO_MEDIO_OK = 2.0
 DESVIO_MAX_OK = 10.0
 KERNELS = [17, 11, 9]
 
-SEGMENT_CSV = Path(__file__).parent / "evidence" / "perc_ratio_per_segment.csv"
-OUT_CSV = Path(__file__).parent / "evidence" / "kernel_validation_summary.csv"
+EVIDENCE_DIR = Path(__file__).parent.parent / "evidence" / "phase_b_kernel_validation"
+SEGMENT_CSV = EVIDENCE_DIR / "perc_ratio_per_segment.csv"
+OUT_CSV = EVIDENCE_DIR / "kernel_validation_summary.csv"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
