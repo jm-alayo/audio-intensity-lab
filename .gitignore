@@ -25,11 +25,8 @@ env/
 definitions/
 /ml/runs/*
 ml/artifacts/*
-data/features/*
-research/legacy_runs/*
-research/legacy_models/*
-research/legacy_labels/*
 
 .DS_Store
 Thumbs.db
 *.log
+.vscode/
